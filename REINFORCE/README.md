@@ -20,3 +20,10 @@ The **policy gradient** is defined as: $\Delta J \approx \mathbb{E}\left[ Q(s,a)
 - **No explicit exploration is needed**. As the network returns probabilities, the exploration is performed automatically (because we choose our actions sampling from that probability distribution). In the beginning, the network is initialized withj random weights, and it returns a uniform probability distribution. This distribution corresponds to a random agent behaviour.
 - **No replay buffer is used**. Policy gradient methods are **on-policy**, which means that we can't train on data obntained from the old policy. Such methods usually converge faster, but require much more interaction with the environment than off-policy methods.
 - **No target network is needed**. We use Q-values, but they are obtained from our experience in the environment. In DQN we used the target network to break the correlation in Q-values approximation, but we are not approximating anymore. The target network trick can still be useful in policy gradient methods.
+
+## Key takeaways from the implementation
+
+- In order to generate a training set, we make the policy play and store the pairs (state, action, Q-value). Q-value is calculated on the fly from the rewards.
+- We then make a forward pass with the states through our policy network to generate its corresponding probability distribution over the actions.
+- Take same action that we took when generating the training set (that's why we store which action was performed). This is specially important because the actions weren't chosen with an `argmax` but sampling from the output distribution, so we need to make sure we're taking the same action as before.
+- Now we can calculate the loss!
