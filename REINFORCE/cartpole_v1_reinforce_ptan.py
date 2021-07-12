@@ -8,6 +8,7 @@ import torch.nn.functional as F
 GAMMA = 0.99
 LEARNING_RATE = 0.005
 EPISODES_TO_TRAIN = 4 # How many complete episodes we will use for training
+SAVE_MODEL = True
 
 ## Define the policy network
 class PGN(nn.Module):
@@ -91,6 +92,8 @@ if __name__ == "__main__":
 
             if mean_rewards > 475: # Solved environment condition
                 print(f"Solved in {step_idx} steps and {done_episodes} episodes!")
+                if SAVE_MODEL:
+                    torch.save(policy.state_dict(), "saved_models/REINFORCE_CartPole-v1.pth")
                 break
         
         if batch_episodes < EPISODES_TO_TRAIN:
