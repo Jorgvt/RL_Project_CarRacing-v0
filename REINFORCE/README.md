@@ -27,3 +27,20 @@ The **policy gradient** is defined as: $\Delta J \approx \mathbb{E}\left[ Q(s,a)
 - We then make a forward pass with the states through our policy network to generate its corresponding probability distribution over the actions.
 - Take same action that we took when generating the training set (that's why we store which action was performed). This is specially important because the actions weren't chosen with an `argmax` but sampling from the output distribution, so we need to make sure we're taking the same action as before.
 - Now we can calculate the loss!
+
+## REINFORCE issues
+
+- Full episodes are required. Both REINFORCE and the cross-entropy method behave better with more episodes used ofr training. This situation is fine for short episodes in Cartpole, but in Pong every episode can last for hundreds or even thousands of frames. The purpose of the complete episode requirement is to get as accurate a Q-estimation as possible. In DQN it's fine to replace the exact value for a discounted reward using the Bellman equation, but in the case of the policy gradient, we don't have $V(s)$ or $Q(s,a)$ anymore.
+To overcome this, there are two approaches:
+    - We can ask our network to estimate $V(s)$ and use this estimation to obtain $Q$. This approach is called the **actor-critic method**.
+    - We can do the Bellman equation, unrolling $N$ steps ahead, which will effectively exploit the fact that the value contribution decreases when gamma is less than 1.
+
+- High gradients variance. In the policy gradient formula we have a gradient proportional to the discounted reward from the given state. However, the range of this reward is heavily environment-dependent. For example, in the CartPole environment, we get a reward of 1 for every timestamp that we are holding the pole. Which means that unsuccessful samples will be quite lower than successful ones, and such a large difference can seriously affect our training dynamics, as one lucky episode will dominate the final gradient.
+In mathematical terms, the policy gradient has high variance, and we need to do something about this or the training process can become unstable. The usual approach to handling this is substracting a value called the **baseline** from the $Q$. Posible choices for baselines:
+    - Constant value. Normally the mean of the discounted reward.
+    - Moving average of the discounted rewards.
+    - Value of the state, $V(s)$.
+
+- **Exploration**. There is high chance that the agent will converge to some locally optimal policy and stop exploring the environment. Policy gradient methods allow us to use the **entropy bonus**. Entropy is a measure of uncertainty and can show how much the agent is uncertain about which action to take. To prevent our agent from being stuck in the local minimum, we substract the entropy from the loss function, punishing the agent for being too certain about the action to take.
+
+- **Correlation between samples**. Training samples in a single episode are usually heavily correlated, which is bad for SGD. TO solve this, parallel environments are normally used. Instead of communicating with one environment, we use several and use their transitions as training data.
