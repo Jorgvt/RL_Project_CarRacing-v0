@@ -20,10 +20,14 @@ class A2C(nn.Module):
         self.policy = nn.Sequential(*[
             nn.Linear(obs_dim, 64),
             nn.ReLU(),
+            nn.Linear(64, 64),
+            nn.ReLU(),
             nn.Linear(64, action_dim)
         ])
         self.value = nn.Sequential(*[
             nn.Linear(obs_dim, 64),
+            nn.ReLU(),
+            nn.Linear(64, 64),
             nn.ReLU(),
             nn.Linear(64, 1)
         ])
@@ -38,36 +42,37 @@ class A2C(nn.Module):
         return action, value
 
 def unpack_batch(batch, model, gamma, n_steps):
-    states, actions, rewards, dones, last_states = [], [], [], [], []
+    states, actions, rewards, not_dones, last_states = [], [], [], [], []
 
     ## Unpack the elements in the batch
-    for exp in batch:
+    for idx, exp in enumerate(batch):
         state = exp.state
         action = exp.action
         reward = exp.reward
-        done = exp.last_state is None
-        last_state = exp.last_state
+        if exp.last_state is not None:
+            not_done = idx
+            last_state = exp.last_state
+            not_dones.append(not_done)
+            last_states.append(last_state)
 
         states.append(state)
         actions.append(action)
         rewards.append(reward)
-        dones.append(done)
-        last_states.append(last_state)
+        
 
     ## Now we have to add the last_state rewards.
     ## If its a terminal state, its value is 0.
     ## If its non terminal, its value can be estimated with the model.
-    ## This is very innefficient, but its good enough for a simple test.
-    for idx, last_state in enumerate(last_states):
-        if last_state is not None:
-            last_state = torch.FloatTensor(last_state).unsqueeze(0)
-            value = model(last_state)[1].cpu().detach().numpy().item()
-            rewards[idx] += (gamma**n_steps) * value
+    if not_done:
+        last_states_t = torch.FloatTensor(last_states)
+        last_states_values = model(last_states_t)[1].cpu().detach().numpy()
+        rewards_np = np.array(rewards, dtype=np.float32) # Needs to be a np.array to allow indexing with a list
+        rewards_np[not_dones] += (gamma ** n_steps)*last_states_values[:,0] # rewards_np is (80,) and last_state_values is (80,1)
     
     ## Turn everything into tensors
     states_t = torch.FloatTensor(states)
     actions_t = torch.LongTensor(actions)
-    rewards_t = torch.FloatTensor(rewards)
+    rewards_t = torch.FloatTensor(rewards_np)
 
     ## Return the tensors
     return states_t, actions_t, rewards_t
@@ -101,10 +106,11 @@ def see_model_in_action(env, model):
 
 if __name__ == "__main__":
     
-    SAVE_MODEL = False
+    SAVE_MODEL = True
     ## Define constants
     config = dict(
-        ENV_ID = 'CartPole-v1',
+        ENV_ID = 'MountainCar-v0',
+        REWARD_THRESHOLD = -110,
         # NORMALIZE_REWARD = True,
         N_STEPS = 5,
         N_ENVS = 16,
@@ -140,7 +146,7 @@ if __name__ == "__main__":
     ## and a completed episodes counter.
     rew = []
     completed_episodes = 0
-        
+    solved = False
     ## Create empty batch of experiences
     batch = []
 
@@ -157,12 +163,13 @@ if __name__ == "__main__":
             completed_episodes += 1
             print(f"Steps: {steps} -> Reward: {np.mean(rew[-100:]):.2f}")
             
-            if np.mean(rew[-100:]) > 475:
+            if np.mean(rew[-100:]) > config.REWARD_THRESHOLD:
+                solved = True
                 print(f"Solved in {completed_episodes} episodes ({steps} steps)!")
                 if SAVE_MODEL:
                     torch.save(model.state_dict(), f"{wandb.run.dir}/{config.ENV_ID}_{completed_episodes}_EP.pth")
                     torch.save(model.state_dict(), f"trained_models/{config.ENV_ID}_{completed_episodes}_EP.pth")
-                    # wandb.save(f"trained_models/{config.ENV_ID}_{completed_episodes}_EP.pth")
+                    
                 break
         
         ## If we still haven't filled the batch, restart the loop to get another experience
@@ -195,11 +202,9 @@ if __name__ == "__main__":
 
         ## Calculate the policy log-lilkelihood with respect the actions taken.
         log_prob_t = policy_dist.log_prob(actions_t)
-        log_prob_v = F.log_softmax(policy_logits_t, dim=1) 
-
+        
         ## Scale by the advantage
         policy_loss_t = -(advantages_t * log_prob_t).mean() # Minus sign because we want to maximize this function
-        log_prob_actions_v = -(advantages_t * log_prob_v[range(config.BATCH_SIZE), actions_t]).mean()
         
         ## Calculate the entropy loss
         entropy_loss_t = policy_dist.entropy().mean()
@@ -235,9 +240,10 @@ if __name__ == "__main__":
         "entropy_loss":entropy_loss_t.item(),
         "total_loss":loss_t.item(),
         "advantage":advantages_t.mean().item(),
-        "reward_mean_100":np.mean(rew[-100:])
+        "reward_mean_100":np.mean(rew[-100:]),
+        "solved":solved
     })
-
+    wandb.run.summary["solved"] = solved
     ## Finish the logging
     wandb.finish()
 
