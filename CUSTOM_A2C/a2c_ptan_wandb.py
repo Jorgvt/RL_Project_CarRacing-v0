@@ -8,6 +8,9 @@ import ptan
 import wandb
 
 class A2C(nn.Module):
+    """
+    Architecture based on Stable Baselines in order to make a fair comparison.
+    """
     def __init__(self, obs_dim, action_dim):
         super(A2C, self).__init__()
         self.shared_core = nn.Sequential(*[
@@ -15,14 +18,21 @@ class A2C(nn.Module):
             nn.ReLU()
         ])
         self.policy = nn.Sequential(*[
-            nn.Linear(128, action_dim)
+            nn.Linear(obs_dim, 64),
+            nn.ReLU(),
+            nn.Linear(64, action_dim)
         ])
         self.value = nn.Sequential(*[
-            nn.Linear(128, 1)
+            nn.Linear(obs_dim, 64),
+            nn.ReLU(),
+            nn.Linear(64, 1)
         ])
     
     def forward(self, X):
-        features = self.shared_core(X)
+        # features = self.shared_core(X)
+        ## In Stable Baselines, the shared core for vector observations is a flatten layer.
+        # features = X.view(X.shape[0],-1)
+        features = X
         action = self.policy(features)
         value = self.value(features)
         return action, value
@@ -90,27 +100,16 @@ def see_model_in_action(env, model):
 
 
 if __name__ == "__main__":
-    # ## Define constants
-    # ENV_ID = 'CartPole-v1'
-    # # NORMALIZE_REWARD = True
-    # N_STEPS = 5
-    # N_ENVS = 16
-    # GAMMA = 0.99
-    # BATCH_SIZE = 32 # Stable Baselines3 convention -> BATCH_SIZE = N_STEPS*N_ENVS 
-    # BETA_ENTROPY = 0.0
-    # COEF_VALUE = 0.5
-
-    # RMS_PROP_EPS = 1e-5
-    # LEARNING_RATE = 7e-4
-    # TIMESTEPS = 1e6
-    SAVE_MODEL = True
-
+    
+    SAVE_MODEL = False
+    ## Define constants
     config = dict(
         ENV_ID = 'CartPole-v1',
         # NORMALIZE_REWARD = True,
         N_STEPS = 5,
         N_ENVS = 16,
         GAMMA = 0.99,
+        CLIP_GRAD = 0.5,
         BATCH_SIZE = 32, # Stable Baselines3 convention -> BATCH_SIZE = N_STEPS*N_ENVS 
         BETA_ENTROPY = 0.0,
         COEF_VALUE = 0.5,
@@ -118,6 +117,7 @@ if __name__ == "__main__":
         LEARNING_RATE = 7e-4,
         TIMESTEPS = 1e6
     )
+    config["BATCH_SIZE"] = config["N_STEPS"]*config["N_ENVS"]
 
     run = wandb.init(config=config, project="RL_Test")
     config = wandb.config
@@ -207,8 +207,11 @@ if __name__ == "__main__":
         ## Add the losses
         loss_t = config.COEF_VALUE*loss_value_t + policy_loss_t - config.BETA_ENTROPY*entropy_loss_t
 
-        ## Backpropagate the loss and update the weights
+        ## Backpropagate the loss and update the weights. 
+        ## Clip gradients if specified.
         loss_t.backward()
+        if config.CLIP_GRAD:
+            nn.utils.clip_grad_norm_(model.parameters(), max_norm=config.CLIP_GRAD)
         optimizer.step()
 
         ## Log metrics
